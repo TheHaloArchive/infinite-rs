@@ -29,6 +29,9 @@ pub enum ModuleError {
     /// This error serves as a runtime assert.
     #[error("Module file block index must be non-negative, found {0}")]
     NegativeBlockIndex(i32),
+    /// Occurs when the [`is_compressed`](`crate::module::block::ModuleBlockEntry::is_compressed`) value is not 0 or 1
+    #[error("Value for is_compressed incorrect!")]
+    IncorrectCompressedValue,
 }
 
 #[derive(Error, Debug)]

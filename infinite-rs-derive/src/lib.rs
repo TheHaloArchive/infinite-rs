@@ -110,7 +110,7 @@ fn generate_field_blocks(
                     },
                     "FieldData" => {
                         Some(quote! {
-                            self.#field_name.load_data(reader, tag_file)?;
+                            self.#field_name.load_data(reader, source_index, parent_index, tag_file)?;
                         })
                     },
                     _ => None
@@ -164,6 +164,7 @@ fn tag_structure_derive2(
             fn load_field_blocks<R: std::io::BufRead + std::io::Seek + infinite_rs::common::extensions::BufReaderExt>(
                 &mut self,
                 source_index: i32,
+                parent_index: usize,
                 adjusted_base: u64,
                 reader: &mut R,
                 tag_file: &infinite_rs::tag::loader::TagFile,

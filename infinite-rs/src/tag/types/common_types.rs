@@ -712,7 +712,7 @@ impl<T: TagStructure + Default> FieldArray<T> {
         tag_file: &TagFile,
     ) -> Result<()> {
         for element in &mut self.elements {
-            element.load_field_blocks(source_index, adjusted_base, reader, tag_file)?;
+            element.load_field_blocks(source_index, 0, adjusted_base, reader, tag_file)?;
         }
         Ok(())
     }
@@ -754,15 +754,18 @@ impl<T: TagStructure + Debug + Default> FieldBlock<T> {
 
         // This is the "root" of the tag block, pointing to where the metadata for it is stored.
         // If target index is -1, it's a resource block, which we don't want right now.
-        let block_struct = structs.iter().find(|s| {
+        let block_root = structs.iter().enumerate().find(|(_, s)| {
             s.field_block == current_block
                 && u64::from(s.field_offset) == collection_offset
                 && s.target_index != -1
         });
 
-        if let Some(block_struct) = block_struct {
+        if let Some(block_struct) = block_root {
             #[allow(clippy::cast_sign_loss)]
-            let block = &blocks[block_struct.target_index as usize];
+            let Some(block) = blocks.get(block_struct.1.target_index as usize) else {
+                return Ok(());
+            };
+
             let mut offset = block.offset;
 
             // HACK: Calculate offset using other blocks.
@@ -789,7 +792,8 @@ impl<T: TagStructure + Debug + Default> FieldBlock<T> {
             for (idx, element) in self.elements.iter_mut().enumerate() {
                 let adjusted_base = size * idx as u64;
                 element.load_field_blocks(
-                    block_struct.target_index,
+                    block_struct.1.target_index,
+                    idx,
                     adjusted_base,
                     reader,
                     tag_file,
@@ -826,7 +830,7 @@ impl FieldReference {
 pub struct FieldData {
     data_pointer: u64, // uintptr at runtime
     type_info: u64,    // uintptr at runtime
-    data_reference_index: u32,
+    pub unknown: u32,
     pub size: u32,
     pub data: Vec<u8>,
 }
@@ -835,23 +839,39 @@ impl FieldData {
     pub fn read<R: BufRead>(&mut self, reader: &mut R) -> Result<()> {
         self.data_pointer = reader.read_u64::<LE>()?;
         self.type_info = reader.read_u64::<LE>()?;
-        self.data_reference_index = reader.read_u32::<LE>()?;
+        self.unknown = reader.read_u32::<LE>()?;
         self.size = reader.read_u32::<LE>()?;
         Ok(())
     }
 
-    pub fn load_data<R: BufReaderExt>(&mut self, reader: &mut R, tag_file: &TagFile) -> Result<()> {
-        let reference = &tag_file.data_references[self.data_reference_index as usize];
-        if reference.target_index != -1 {
-            let datablock =
-                &tag_file.datablock_definitions[usize::try_from(reference.target_index)?];
-            let position = reader.stream_position()?;
-            reader.seek(SeekFrom::Start(datablock.get_offset(tag_file)))?;
-            let mut buf = vec![0; self.size as usize];
-            reader.read_exact(&mut buf)?;
-            self.data = buf;
-            reader.seek(SeekFrom::Start(position))?;
+    pub fn load_data<R: BufReaderExt>(
+        &mut self,
+        reader: &mut R,
+        parent_index: i32,
+        parent_struct_index: usize,
+        tag_file: &TagFile,
+    ) -> Result<()> {
+        let reference = tag_file
+            .data_references
+            .iter()
+            .filter(|x| x.field_block == parent_index)
+            .collect::<Vec<_>>();
+        if let Some(reference) = reference.get(parent_struct_index) {
+            if reference.target_index != -1 {
+                let datablock = &tag_file
+                    .datablock_definitions
+                    .get(usize::try_from(reference.target_index)?);
+                let position = reader.stream_position()?;
+                if let Some(datablock) = datablock {
+                    reader.seek(SeekFrom::Start(datablock.get_offset(tag_file)))?;
+                    let mut buf = vec![0; self.size as usize];
+                    reader.read_exact(&mut buf)?;
+                    reader.seek(SeekFrom::Start(position))?;
+                    self.data = buf;
+                }
+            }
         }
+
         Ok(())
     }
 }
@@ -882,11 +902,28 @@ impl<T: TagStructure + Debug> FieldTagResource<T> {
         let resource = tag_file
             .struct_definitions
             .iter()
-            .find(|s| s.struct_type == TagStructType::Custom);
+            .enumerate()
+            .find(|(_, s)| {
+                s.struct_type == TagStructType::Custom && u64::from(s.field_offset) == adjusted_base
+            });
         if let Some(resource) = resource {
-            self.data.read(reader)?;
-            self.data
-                .load_field_blocks(resource.target_index, adjusted_base, reader, tag_file)?;
+            let datablock = &tag_file
+                .datablock_definitions
+                .get(usize::try_from(resource.1.target_index)?);
+            let position = reader.stream_position()?;
+            if let Some(datablock) = datablock {
+                let datablock_location = datablock.get_offset(tag_file);
+                reader.seek(SeekFrom::Start(datablock_location))?;
+                self.data.read(reader)?;
+                self.data.load_field_blocks(
+                    resource.1.target_index,
+                    resource.0,
+                    0,
+                    reader,
+                    tag_file,
+                )?;
+                reader.seek(SeekFrom::Start(position))?;
+            }
         }
         Ok(())
     }

@@ -65,6 +65,7 @@ pub trait TagStructure {
     fn load_field_blocks<R: BufReaderExt>(
         &mut self,
         source_index: i32,
+        parent_index: usize,
         adjusted_base: u64,
         reader: &mut R,
         tag_file: &TagFile,
@@ -78,9 +79,9 @@ bitflags! {
         /// No additional HD1 module is required.
         const USE_SELF = 0;
         /// Additional HD1 module is required.
-        const USE_HD1 = 0b0000_0001;
+        const USE_HD1 = 1 << 0;
         /// Indicates that this file is present in a Debug module.
-        const DEBUG = 0b0000_0010;
+        const DEBUG = 1 << 1;
     }
 }
 
@@ -89,12 +90,12 @@ bitflags! {
     /// Flags that determine how a tag should be read.
     pub struct FileEntryFlags : u8  {
         /// If tag is compressed or not.
-        const COMPRESSED = 0b0000_0001;
+        const COMPRESSED = 1 << 0;
         /// Indicates that tag is made up of "tag blocks" which need to be joined to assemble the
         /// entire file entry.
-        const HAS_BLOCKS = 0b0000_0010;
+        const HAS_BLOCKS = 1 << 1;
         /// "Raw tag" that does not contain a tag header.
-        const RAW_FILE = 0b0000_0100;
+        const RAW_FILE = 1 << 2;
     }
 }
 
@@ -172,81 +173,59 @@ impl ModuleFileEntry {
     /// # Arguments
     ///
     /// * `reader` - A mutable reference to a reader implementing [`BufReaderExt`]
-    /// * `module_version` - Version of the module being read
+    /// * `is_flight1` - Whether the module is a Flight1 module
     ///
     /// # Errors
     /// - If the reader fails to read the structure [`ReadError`](`crate::Error::ReadError`)
-    pub fn read<R: BufReaderExt>(
-        &mut self,
-        reader: &mut R,
-        module_version: &ModuleVersion,
-    ) -> Result<()> {
-        if module_version == &ModuleVersion::Flight1 {
-            self.read_flight1(reader)?;
+    pub(super) fn read<R: BufReaderExt>(&mut self, reader: &mut R, is_flight1: bool) -> Result<()> {
+        if is_flight1 {
+            self.name_offset = reader.read_u32::<LE>()?;
+            self.parent_index = reader.read_i32::<LE>()?;
+            self.resource_count = reader.read_u16::<LE>()?.into();
+            self.block_count = reader.read_u16::<LE>()?;
+            self.resource_index = reader.read_i32::<LE>()?;
+            self.block_index = reader.read_i32::<LE>()?;
         } else {
-            self.read_other(reader)?;
+            self.unknown = reader.read_u8()?;
+            self.flags = FileEntryFlags::from_bits_truncate(reader.read_u8()?);
+            self.block_count = reader.read_u16::<LE>()?;
+            self.block_index = reader.read_i32::<LE>()?;
+            self.resource_index = reader.read_i32::<LE>()?;
+        }
+
+        self.tag_group = reader.read_fixed_string(4)?.chars().rev().collect(); // Reverse string
+        let data_offset = reader.read_u64::<LE>()?;
+        self.data_offset = data_offset & 0x0000_FFFF_FFFF_FFFF; // Mask first 6 bytes
+        self.data_offset_flags = DataOffsetType::from_bits_retain((data_offset >> 48) as u16); // Read last 2 bytes
+        self.total_compressed_size = reader.read_u32::<LE>()?;
+        self.total_uncompressed_size = reader.read_u32::<LE>()?;
+
+        if is_flight1 {
+            self.asset_hash = reader.read_i128::<LE>()?;
+        }
+
+        self.tag_id = reader.read_i32::<LE>()?;
+        self.uncompressed_header_size = reader.read_u32::<LE>()?;
+        self.uncompressed_tag_data_size = reader.read_u32::<LE>()?;
+        self.uncompressed_resource_data_size = reader.read_u32::<LE>()?;
+        self.uncompressed_actual_resource_size = reader.read_u32::<LE>()?;
+        self.header_alignment = reader.read_u8()?;
+        self.tag_data_alignment = reader.read_u8()?;
+        self.resource_data_alignment = reader.read_u8()?;
+        self.actual_resource_data_alignment = reader.read_u8()?;
+
+        if is_flight1 {
+            reader.seek_relative(1)?;
+            self.unknown = reader.read_u8()?;
+            self.flags = FileEntryFlags::from_bits_truncate(reader.read_u8()?);
+            reader.seek_relative(1)?;
+        } else {
+            self.name_offset = reader.read_u32::<LE>()?;
+            self.parent_index = reader.read_i32::<LE>()?;
+            self.asset_hash = reader.read_i128::<LE>()?;
+            self.resource_count = reader.read_i32::<LE>()?;
         }
         reader.seek_relative(4)?; // Skip some padding
-        Ok(())
-    }
-
-    /// Reads module file entry data specifically for modules of version [`Flight1`](`ModuleVersion::Flight1`).
-    fn read_flight1<R: BufReaderExt>(&mut self, reader: &mut R) -> Result<()> {
-        self.name_offset = reader.read_u32::<LE>()?;
-        self.parent_index = reader.read_i32::<LE>()?;
-        self.resource_count = reader.read_u16::<LE>()?.into();
-        self.block_count = reader.read_u16::<LE>()?;
-        self.resource_index = reader.read_i32::<LE>()?;
-        self.block_index = reader.read_i32::<LE>()?;
-        self.tag_group = reader.read_fixed_string(4)?.chars().rev().collect(); // Reverse string
-        let data_offset = reader.read_u64::<LE>()?;
-        self.data_offset = data_offset & 0x0000_FFFF_FFFF_FFFF; // Mask first 6 bytes
-        self.data_offset_flags = DataOffsetType::from_bits_retain((data_offset >> 48) as u16); // Read last 2 bytes
-        self.total_compressed_size = reader.read_u32::<LE>()?;
-        self.total_uncompressed_size = reader.read_u32::<LE>()?;
-        self.asset_hash = reader.read_i128::<LE>()?;
-        self.tag_id = reader.read_i32::<LE>()?;
-        self.uncompressed_header_size = reader.read_u32::<LE>()?;
-        self.uncompressed_tag_data_size = reader.read_u32::<LE>()?;
-        self.uncompressed_resource_data_size = reader.read_u32::<LE>()?;
-        self.uncompressed_actual_resource_size = reader.read_u32::<LE>()?;
-        self.header_alignment = reader.read_u8()?;
-        self.tag_data_alignment = reader.read_u8()?;
-        self.resource_data_alignment = reader.read_u8()?;
-        self.actual_resource_data_alignment = reader.read_u8()?;
-        reader.seek_relative(1)?;
-        self.unknown = reader.read_u8()?;
-        self.flags = FileEntryFlags::from_bits_truncate(reader.read_u8()?);
-        reader.seek_relative(1)?;
-        Ok(())
-    }
-
-    /// Reads module file entry data for non-[`Flight1`](`ModuleVersion::Flight1`) module versions.
-    fn read_other<R: BufReaderExt>(&mut self, reader: &mut R) -> Result<()> {
-        self.unknown = reader.read_u8()?;
-        self.flags = FileEntryFlags::from_bits_truncate(reader.read_u8()?);
-        self.block_count = reader.read_u16::<LE>()?;
-        self.block_index = reader.read_i32::<LE>()?;
-        self.resource_index = reader.read_i32::<LE>()?;
-        self.tag_group = reader.read_fixed_string(4)?.chars().rev().collect(); // Reverse string
-        let data_offset = reader.read_u64::<LE>()?;
-        self.data_offset = data_offset & 0x0000_FFFF_FFFF_FFFF; // Mask first 6 bytes
-        self.data_offset_flags = DataOffsetType::from_bits_retain((data_offset >> 48) as u16); // Read last 2 bytes
-        self.total_compressed_size = reader.read_u32::<LE>()?;
-        self.total_uncompressed_size = reader.read_u32::<LE>()?;
-        self.tag_id = reader.read_i32::<LE>()?;
-        self.uncompressed_header_size = reader.read_u32::<LE>()?;
-        self.uncompressed_tag_data_size = reader.read_u32::<LE>()?;
-        self.uncompressed_resource_data_size = reader.read_u32::<LE>()?;
-        self.uncompressed_actual_resource_size = reader.read_u32::<LE>()?;
-        self.header_alignment = reader.read_u8()?;
-        self.tag_data_alignment = reader.read_u8()?;
-        self.resource_data_alignment = reader.read_u8()?;
-        self.actual_resource_data_alignment = reader.read_u8()?;
-        self.name_offset = reader.read_u32::<LE>()?;
-        self.parent_index = reader.read_i32::<LE>()?;
-        self.asset_hash = reader.read_i128::<LE>()?;
-        self.resource_count = reader.read_i32::<LE>()?;
         Ok(())
     }
 
@@ -294,7 +273,7 @@ impl ModuleFileEntry {
             let mut tagfile = TagFile::default();
             if let Some(ref mut stream) = self.data_stream {
                 if self.tag_group == "psod" {
-                    // HACK:: "psod" tags do not have string tables in any version.
+                    // HACK: "psod" tags do not have string tables in any version.
                     tagfile.read(stream, &ModuleVersion::Season3)?;
                 } else {
                     tagfile.read(stream, module_version)?;
@@ -334,9 +313,7 @@ impl ModuleFileEntry {
         data: &mut [u8],
     ) -> Result<()> {
         if self.block_index < 0 {
-            return Err(Error::ModuleError(ModuleError::NegativeBlockIndex(
-                self.block_index,
-            )));
+            return Err(ModuleError::NegativeBlockIndex(self.block_index).into());
         }
         let first_block_index = self.block_index as usize;
         reader.seek(SeekFrom::Start(file_offset))?;
@@ -364,34 +341,32 @@ impl ModuleFileEntry {
     /// field block definitions are loaded recursively.
     ///
     ///
-    /// # Arguments
+    /// # Generic Arguments
     ///
-    /// * `struct_type` - A mutable reference to the struct implementing [`TagStructure`] to read the data into.
+    /// * `T` - The type of the struct implementing [`TagStructure`] to read the data into.
     ///
     /// # Errors
     /// - If the tag data is not loaded [`TagError::NotLoaded`]
     /// - If the tag info is not present [`TagError::NoTagInfo`]
     /// - If the main struct definition is not found [`TagError::MainStructNotFound`]
     /// - If the reader fails to read the exact number of bytes [`ReadError`](`crate::Error::ReadError`)
-    pub fn read_metadata<T: Default + TagStructure>(&mut self, struct_type: &mut T) -> Result<T> {
+    pub fn read_metadata<T: Default + TagStructure>(&mut self) -> Result<T> {
+        let mut struct_type = T::default();
         let mut full_tag = Vec::with_capacity(
             self.total_uncompressed_size as usize - self.uncompressed_header_size as usize,
         );
         self.data_stream
             .as_mut()
-            .ok_or(Error::TagError(TagError::NotLoaded))?
+            .ok_or(TagError::NotLoaded)?
             .read_to_end(&mut full_tag)?;
 
-        let tag_info = self
-            .tag_info
-            .as_ref()
-            .ok_or(Error::TagError(TagError::NoTagInfo))?;
+        let tag_info = self.tag_info.as_ref().ok_or(TagError::NoTagInfo)?;
 
         let main_struct = tag_info
             .struct_definitions
             .iter()
             .find(|s| s.struct_type == TagStructType::MainStruct)
-            .ok_or(Error::TagError(TagError::MainStructNotFound))?;
+            .ok_or(TagError::MainStructNotFound)?;
 
         #[allow(clippy::cast_sign_loss)]
         let main_block: &TagDataBlock =
@@ -403,10 +378,11 @@ impl ModuleFileEntry {
         struct_type.load_field_blocks(
             main_struct.target_index,
             0,
+            0,
             &mut full_tag_reader,
             tag_info,
         )?;
-        Ok(T::default())
+        Ok(struct_type)
     }
 
     /// Reads data from internal buffer into a [`Vec<u8>`].
@@ -516,7 +492,7 @@ unsafe fn read_compressed_block(
 /// - If the decompression operation fails [`Error::DecompressionError`]
 ///
 /// # Safety
-/// - This function can be unsafe because it can call the [`decompress`] function, which is unsafe.
+/// - This function can be unsafe because it may call the [`decompress`] function, which is unsafe.
 fn read_single_block(
     reader: &mut BufReader<File>,
     file_entry: &ModuleFileEntry,

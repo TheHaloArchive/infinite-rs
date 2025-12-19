@@ -4,7 +4,7 @@ use byteorder::{LE, ReadBytesExt};
 use std::io::BufRead;
 
 use crate::Result;
-use crate::common::errors::{Error, TagError};
+use crate::common::errors::TagError;
 
 const HEADER_MAGIC: u32 = 0x6873_6375; // "ucsh"
 const HEADER_VERSION: i32 = 27;
@@ -74,12 +74,12 @@ impl TagHeader {
     pub fn read<R: BufRead>(&mut self, reader: &mut R) -> Result<()> {
         self.magic = reader.read_u32::<LE>()?;
         if self.magic != HEADER_MAGIC {
-            return Err(Error::TagError(TagError::IncorrectMagic(self.magic)));
+            return Err(TagError::IncorrectMagic(self.magic).into());
         }
 
         self.version = reader.read_i32::<LE>()?;
         if self.version != HEADER_VERSION {
-            return Err(Error::TagError(TagError::IncorrectVersion(self.version)));
+            return Err(TagError::IncorrectVersion(self.version).into());
         }
 
         self.root_struct_guid = reader.read_i64::<LE>()?;

@@ -26,8 +26,7 @@ fn main() -> Result<()> {
         if module.files[idx].tag_group == SCRIPT_GROUP {
             let tag = module.read_tag(idx as u32)?;
             if let Some(tag) = tag {
-                let mut source = HsSourceFileTag::default();
-                tag.read_metadata(&mut source)?;
+                let source = tag.read_metadata::<HsSourceFileTag>()?;
 
                 let server_buf = source.server.data;
                 let client_buf = source.client.data;

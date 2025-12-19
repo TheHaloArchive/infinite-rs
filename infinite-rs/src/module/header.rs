@@ -5,7 +5,7 @@ use num_enum::TryFromPrimitive;
 use std::{fs::File, io::BufReader};
 
 use crate::Result;
-use crate::common::errors::{Error, ModuleError};
+use crate::common::errors::ModuleError;
 
 const HEADER_MAGIC: u32 = 0x6468_6F6D; // "mohd"
 
@@ -76,7 +76,7 @@ impl ModuleHeader {
     pub(super) fn read(&mut self, reader: &mut BufReader<File>) -> Result<()> {
         self.magic = reader.read_u32::<LE>()?;
         if self.magic != HEADER_MAGIC {
-            return Err(Error::ModuleError(ModuleError::IncorrectMagic(self.magic)));
+            return Err(ModuleError::IncorrectMagic(self.magic).into());
         }
         self.version = ModuleVersion::try_from_primitive(reader.read_i32::<LE>()?)
             .map_err(ModuleError::IncorrectVersion)?;

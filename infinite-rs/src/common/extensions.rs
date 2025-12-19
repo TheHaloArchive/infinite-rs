@@ -63,13 +63,11 @@ pub trait BufReaderExt: BufRead + Seek {
         let mut buffer = vec![0; length];
         self.read_exact(&mut buffer)?;
 
-        if buffer == [255, 255, 255, 255] {
-            return Ok(String::new()); // Return empty string if all bytes are 0xFF
-        }
-
-        let string = String::from_utf8(buffer)?;
-
-        Ok(string)
+        Ok(if buffer == [0xFF; 4] {
+            String::new() // Return empty string if all bytes are 0xFF
+        } else {
+            String::from_utf8(buffer)?
+        })
     }
 
     /// Reads a null-terminated string from the reader.

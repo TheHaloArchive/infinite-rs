@@ -153,8 +153,7 @@ fn main() -> Result<()> {
             let tag = module.read_tag(index as u32)?;
             if let Some(tag) = tag {
                 if tag.tag_group == "mat " {
-                    let mut mat = MaterialTag::default();
-                    tag.read_metadata(&mut mat)?;
+                    let _ = tag.read_metadata::<MaterialTag>()?;
                 }
                 // explicitly drop buffer to free up memory
                 // normally, can take 50+ GBs of RAM

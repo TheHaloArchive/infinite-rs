@@ -33,7 +33,7 @@ pub struct ModuleFile {
     /// Offset in [`BufReader`] where file data starts.
     file_data_offset: u64,
     /// Reference to the module file buffer.
-    module_file: Option<BufReader<File>>,
+    file_handle: Option<BufReader<File>>,
     /// Reference to HD1 buffer if it exists.
     hd1_file: Option<BufReader<File>>,
     /// Whether to use the HD1 module or not.
@@ -68,7 +68,7 @@ impl ModuleFile {
 
         for _ in 0..self.header.file_count {
             let mut file = ModuleFileEntry::default();
-            file.read(&mut reader, &self.header.version)?;
+            file.read(&mut reader, self.header.version == ModuleVersion::Flight1)?;
             self.files.push(file);
         }
 
@@ -83,6 +83,7 @@ impl ModuleFile {
 
         // Read strings contained in the file. A stringlist only exists in files before Season 3.
         // Each entry is separated by a null terminator, and files specify their offset themselves
+
         // in no particular order, so we cannot pre-read and just index into them.
         //
         // For files from modules that do not contain strings, we get it from the `get_tag_path` function.
@@ -112,7 +113,7 @@ impl ModuleFile {
         let stream_position = reader.stream_position()?;
         reader.seek(SeekFrom::Start((stream_position / 0x1000 + 1) * 0x1000))?;
         self.file_data_offset = reader.stream_position()?;
-        self.module_file = Some(reader);
+        self.file_handle = Some(reader);
         Ok(())
     }
 
@@ -179,8 +180,7 @@ impl ModuleFile {
     ///
     /// # Arguments
     ///
-    /// * `index` - The index of the file entry to read the tag from. This index corresponds to
-    ///             the position of the file entry in the [`files`](`ModuleFile::files`) vector.
+    /// * `index` - The index of the file entry to read the tag from. This index corresponds to the position of the file entry in the [`files`](`ModuleFile::files`) vector.
     ///
     /// # Returns
     ///
@@ -208,7 +208,7 @@ impl ModuleFile {
             } else {
                 return Ok(None);
             }
-        } else if let Some(ref mut module_file) = self.module_file {
+        } else if let Some(ref mut module_file) = self.file_handle {
             file.read_tag(
                 module_file,
                 self.file_data_offset,
@@ -228,8 +228,7 @@ impl ModuleFile {
     ///
     /// # Arguments
     ///
-    /// * `global_id` - The global tag ID of the file to find. This ID is used to identify the
-    ///                 specific tag within the module file.
+    /// * `global_id` - The global tag ID of the file to find. This ID is used to identify the specific tag within the module file.
     ///
     /// # Returns
     ///

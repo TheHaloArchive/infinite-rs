@@ -3,7 +3,7 @@
 //! Originally from: <https://github.com/rfuzzo/red4lib>
 
 use crate::Result;
-use crate::common::errors::{DecompressionError, Error};
+use crate::common::errors::DecompressionError;
 
 #[link(name = "kraken_static")]
 unsafe extern "C" {
@@ -52,18 +52,14 @@ pub unsafe fn decompress(
         );
 
         if result < 0 {
-            return Err(Error::DecompressionError(
-                DecompressionError::DecompressionFailed(result),
-            ));
+            return Err(DecompressionError::DecompressionFailed(result).into());
         }
 
-        let result_usize = usize::try_from(result)
-            .map_err(|_| Error::DecompressionError(DecompressionError::BufferSizeOverflow))?;
+        let result_usize =
+            usize::try_from(result).map_err(|_| DecompressionError::BufferSizeOverflow)?;
 
         if result_usize > buffer.len() {
-            return Err(Error::DecompressionError(
-                DecompressionError::BufferSizeOverflow,
-            ));
+            return Err(DecompressionError::BufferSizeOverflow.into());
         }
 
         buffer.resize(result_usize, 0);

@@ -3,10 +3,10 @@ members = ["infinite-rs", "infinite-rs-derive"]
 resolver = "3"
 
 [workspace.package]
-authors = ["Surasia"]
+authors = ["Surasia", "TheHaloArchive"]
 documentation = "https://docs.rs/infinite-rs"
-repository = "https://github.com/Surasia/infinite-rs"
-categories = ["encoding", "games", "parsing"]
+repository = "https://github.com/TheHaloArchive/infinite-rs"
+categories = ["encoding", "games", "TheHaloArchive"]
 keywords = ["halo", "halo-infinite", "game-hacking", "reverse-engineering"]
 readme = "README.md"
 license = "Unlicense OR MIT"

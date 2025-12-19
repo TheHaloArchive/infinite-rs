@@ -109,9 +109,7 @@ fn load_tags() -> Result<()> {
         // We first have to populate data_stream and tag_info.
         let tag = module.read_tag(index as u32)?;
         if let Some(tag) = tag {
-            let mut mat = MaterialTag::default();
-            // We pass in our structure as a generic parameter.
-            tag.read_metadata(&mut mat)?;
+            let mat = tag.read_metadata::<MaterialTag>()?;
             // We can now access the fields in our structure.
             // For instance, `any_tag.internal_struct.tag_id` is always equal to the tag id of our file.
             assert_eq!(tag.tag_id, mat.any_tag.internal_struct.tag_id);

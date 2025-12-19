@@ -1,5 +1,10 @@
 # infinite-rs Changelog
 
+## 0.13.0 - 2025-12-18
+- Data blocks can now contain `FieldBlock` and are now read properly.
+- `read_metadata` now takes in a generic `TagStructure` and returns the read result.
+- `IncorrectCompressedValue` error added
+
 ## 0.12.1 - 2025-03-04
 - Fixed issue that caused HD1 files not to be read.
 
