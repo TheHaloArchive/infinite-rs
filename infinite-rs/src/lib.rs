@@ -10,8 +10,6 @@
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(rustdoc::private_intra_doc_links)]
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 /*!
 Simple and fast deserialization library for Halo Infinite.
 
