@@ -47,8 +47,7 @@ use crate::{common::extensions::BufReaderExt, tag::loader::TagFile};
 ///
 /// fn load_tag() {
 ///    let mut file_entry = ModuleFileEntry::default(); // In actual module, use reference to file.
-///    let mut material = MaterialTag::default();
-///    file_entry.read_metadata(&mut material).unwrap();
+///    let material = file_entry.read_metadata::<MaterialTag>().unwrap();
 ///
 ///    assert_eq!(material.size(), 0x30);
 ///    assert_eq!(material.offsets().get("any_tag"), Some(&0x00));
